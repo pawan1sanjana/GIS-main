@@ -8,7 +8,7 @@ import {
   PenSquare, List, Database, Info, X, 
   Map as MapIcon, Route, MapPin, Circle,
   Edit2, Trash2, Download, Upload, Compass,
-  Leaf, Satellite
+  Leaf, Satellite, Play, Square, Crosshair, Plus
 } from 'lucide-react';
 
 const STORAGE_KEY = 'landmapper_react_data';
@@ -41,6 +41,16 @@ export default function App() {
   const [areaUnit, setAreaUnit] = useState('metric');
   const [distUnit, setDistUnit] = useState('metric');
   const [history, setHistory] = useState({ undoStack: [], redoStack: [] });
+
+  // GLandGO Feature States
+  const [isRecordingGPS, setIsRecordingGPS] = useState(false);
+  const [recordType, setRecordType] = useState('polygon'); // 'polygon' or 'polyline'
+  const recordedPathRef = useRef([]);
+  const activePathLayerRef = useRef(null);
+
+  const [isManualCrosshair, setIsManualCrosshair] = useState(false);
+  const manualPointsRef = useRef([]);
+  const manualPathLayerRef = useRef(null);
 
   const lastPositionRef = useRef(null);
   const gpsHistoryRef = useRef([]);
@@ -77,10 +87,7 @@ export default function App() {
     map.on('mousemove', () => {});
     map.on('click', () => setActiveTray(null));
     map.on('dragstart', () => {
-      setFollowUser(prev => {
-        if (prev) return false;
-        return prev;
-      });
+      setFollowUser(false);
     });
 
     map.on('draw:created', handleDrawCreated);
@@ -103,11 +110,13 @@ export default function App() {
   const totalArea = layers.reduce((acc, layerInfo) => {
     if (layerInfo.type === 'polygon' || layerInfo.type === 'rectangle') {
       const layer = drawnItemsRef.current.getLayer(layerInfo.id);
-      if (layer) {
+      if (layer && layer.getLatLngs) {
         const latlngs = layer.getLatLngs()[0];
-        const coords = latlngs.map(ll => [ll.lng, ll.lat]);
-        coords.push(coords[0]);
-        acc += turf.area(turf.polygon([coords]));
+        if (latlngs && latlngs.length >= 3) {
+          const coords = latlngs.map(ll => [ll.lng, ll.lat]);
+          coords.push(coords[0]);
+          acc += turf.area(turf.polygon([coords]));
+        }
       }
     }
     return acc;
@@ -115,19 +124,25 @@ export default function App() {
 
   const calculateMeasurements = (layer) => {
     let area = null, perimeter = null;
-    if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
-      const coords = layer.getLatLngs()[0].map(ll => [ll.lng, ll.lat]);
-      coords.push(coords[0]);
-      area = turf.area(turf.polygon([coords]));
-      perimeter = turf.length(turf.lineString(coords), { units: 'meters' }) * 1000;
-    } else if (layer instanceof L.Polyline) {
-      const coords = layer.getLatLngs().map(ll => [ll.lng, ll.lat]);
-      perimeter = turf.length(turf.lineString(coords), { units: 'meters' }) * 1000;
-    } else if (layer instanceof L.Circle) {
-      const radius = layer.getRadius();
-      area = Math.PI * radius * radius;
-      perimeter = 2 * Math.PI * radius;
-    }
+    try {
+      if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+        const coords = layer.getLatLngs()[0].map(ll => [ll.lng, ll.lat]);
+        if (coords.length >= 3) {
+          coords.push(coords[0]);
+          area = turf.area(turf.polygon([coords]));
+          perimeter = turf.length(turf.lineString(coords), { units: 'meters' }) * 1000;
+        }
+      } else if (layer instanceof L.Polyline) {
+        const coords = layer.getLatLngs().map(ll => [ll.lng, ll.lat]);
+        if (coords.length >= 2) {
+          perimeter = turf.length(turf.lineString(coords), { units: 'meters' }) * 1000;
+        }
+      } else if (layer instanceof L.Circle) {
+        const radius = layer.getRadius();
+        area = Math.PI * radius * radius;
+        perimeter = 2 * Math.PI * radius;
+      }
+    } catch (e) { console.error('Measurement error', e); }
     setMeasurements({ area, perimeter });
   };
 
@@ -147,18 +162,21 @@ export default function App() {
     
     setLayers(prev => [...prev, layerInfo]);
     calculateMeasurements(layer);
+    bindPopupInfo(layer, layerInfo);
     
-    layer.bindPopup(`
-      <div class="p-2">
-        <strong>${layerInfo.name}</strong><br>
-        <small>Created: ${new Date(layerInfo.timestamp).toLocaleString()}</small><br>
-        <small>Accuracy: ${layerInfo.gpsAccuracy}m</small>
-      </div>
-    `);
-
     saveOfflineData();
     setActiveDrawTool(null);
     setActiveTray(null);
+  };
+
+  const bindPopupInfo = (layer, info) => {
+    layer.bindPopup(`
+      <div class="p-2">
+        <strong>${info.name}</strong><br>
+        <small>Created: ${new Date(info.timestamp).toLocaleString()}</small><br>
+        <small>Method: ${info.method || 'Manual Draw'}</small>
+      </div>
+    `);
   };
 
   const handleDrawEdited = (e) => {
@@ -192,6 +210,7 @@ export default function App() {
 
   const startDrawing = (type) => {
     setActiveDrawTool(type);
+    setIsManualCrosshair(false);
     let handler;
     const map = mapRef.current;
     const opts = typeof drawControlRef.current.options.draw === 'object' ? drawControlRef.current.options.draw : {};
@@ -205,6 +224,95 @@ export default function App() {
       handler.enable();
       setActiveTray(null);
     }
+  };
+
+  // --- GLANDGO FEATURES: GPS TRACKING & MANUAL CROSSHAIR ---
+  const toggleGPSRecord = () => {
+    if (isRecordingGPS) {
+      // Stop and Save
+      setIsRecordingGPS(false);
+      finishPath(recordedPathRef.current, 'GPS Tracking');
+      recordedPathRef.current = [];
+      if (activePathLayerRef.current) {
+        mapRef.current.removeLayer(activePathLayerRef.current);
+        activePathLayerRef.current = null;
+      }
+    } else {
+      // Start
+      if (!lastPositionRef.current) return alert("Waiting for GPS signal lock...");
+      setIsRecordingGPS(true);
+      setActiveTray(null);
+      recordedPathRef.current = [lastPositionRef.current];
+      setFollowUser(true); // Auto-follow while mapping
+      
+      activePathLayerRef.current = L.polyline(recordedPathRef.current, { color: 'red', weight: 4 }).addTo(mapRef.current);
+    }
+  };
+
+  const toggleManualCrosshair = () => {
+    setIsManualCrosshair(!isManualCrosshair);
+    setActiveTray(null);
+    if (isManualCrosshair) {
+      manualPointsRef.current = [];
+      if (manualPathLayerRef.current) {
+        mapRef.current.removeLayer(manualPathLayerRef.current);
+        manualPathLayerRef.current = null;
+      }
+    }
+  };
+
+  const addPointFromCrosshair = () => {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    manualPointsRef.current.push([center.lat, center.lng]);
+    
+    if (!manualPathLayerRef.current) {
+      manualPathLayerRef.current = L.polyline(manualPointsRef.current, { color: 'blue', weight: 4 }).addTo(mapRef.current);
+    } else {
+      manualPathLayerRef.current.setLatLngs(manualPointsRef.current);
+    }
+  };
+
+  const finishManualCrosshair = () => {
+    finishPath(manualPointsRef.current, 'Crosshair Drop');
+    manualPointsRef.current = [];
+    if (manualPathLayerRef.current) {
+      mapRef.current.removeLayer(manualPathLayerRef.current);
+      manualPathLayerRef.current = null;
+    }
+    setIsManualCrosshair(false);
+  };
+
+  const finishPath = (points, method) => {
+    if (points.length < 2) return alert("Not enough points to save a shape.");
+    
+    let layer;
+    let actualType = recordType;
+    
+    if (recordType === 'polygon' && points.length >= 3) {
+      layer = L.polygon(points, { color: '#3388ff', fillColor: '#3388ff', fillOpacity: 0.2 });
+    } else {
+      layer = L.polyline(points, { color: '#3388ff', weight: 4 });
+      actualType = 'polyline'; // Fallback if < 3 points
+    }
+
+    saveStateForUndo();
+    drawnItemsRef.current.addLayer(layer);
+    
+    const layerId = L.stamp(layer);
+    const layerInfo = {
+      id: layerId,
+      type: actualType,
+      method: method,
+      name: `GPS ${actualType.charAt(0).toUpperCase() + actualType.slice(1)} ${layers.length + 1}`,
+      timestamp: new Date().toISOString(),
+      gpsAccuracy: gpsData.accuracy.toFixed(1)
+    };
+    
+    setLayers(prev => [...prev, layerInfo]);
+    calculateMeasurements(layer);
+    bindPopupInfo(layer, layerInfo);
+    saveOfflineData();
   };
 
   const editLayers = () => {
@@ -245,26 +353,17 @@ export default function App() {
     const newUndo = [...history.undoStack];
     const prevState = newUndo.pop();
     
-    setHistory(prev => ({
-      undoStack: newUndo,
-      redoStack: [...prev.redoStack, currentState]
-    }));
+    setHistory(prev => ({ undoStack: newUndo, redoStack: [...prev.redoStack, currentState] }));
     restoreState(prevState);
   };
 
   const redoAction = () => {
     if (history.redoStack.length === 0) return;
-    const currentState = {
-      layersDrawn: drawnItemsRef.current.toGeoJSON(),
-      layersInfo: layers
-    };
+    const currentState = { layersDrawn: drawnItemsRef.current.toGeoJSON(), layersInfo: layers };
     const newRedo = [...history.redoStack];
     const nextState = newRedo.pop();
     
-    setHistory(prev => ({
-      undoStack: [...prev.undoStack, currentState],
-      redoStack: newRedo
-    }));
+    setHistory(prev => ({ undoStack: [...prev.undoStack, currentState], redoStack: newRedo }));
     restoreState(nextState);
   };
 
@@ -308,6 +407,7 @@ export default function App() {
             const layerInfo = {
               id: L.stamp(layer),
               type,
+              method: props.method || 'Unknown',
               name: props.name || `Layer ${layers.length + 1}`,
               timestamp: props.timestamp || new Date().toISOString(),
               gpsAccuracy: props.gpsAccuracy || '-'
@@ -332,6 +432,7 @@ export default function App() {
             setLayers(prev => [...prev, {
               id: L.stamp(layer),
               type: 'imported',
+              method: 'Import',
               name: `Imported ${prev.length + 1}`,
               timestamp: new Date().toISOString(),
               gpsAccuracy: '-'
@@ -371,7 +472,6 @@ export default function App() {
       setLoading(false);
       return alert('Geolocation not supported');
     }
-    // Strict constraints: require High Accuracy, do not cache (maximumAge: 0), force frequent fresh polling
     const opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
     navigator.geolocation.getCurrentPosition(updatePosition, () => setLoading(false), opts);
     watchIdRef.current = navigator.geolocation.watchPosition(updatePosition, () => {}, opts);
@@ -392,19 +492,15 @@ export default function App() {
     setLoading(false);
     const { latitude: lat, longitude: lng, accuracy: rawAcc } = pos.coords;
     
-    // STRICT ACCURACY FILTER: Ignore readings with >15m accuracy unless we have no history
     if (rawAcc > 15 && gpsHistoryRef.current.length > 0) return;
 
     gpsHistoryRef.current.push({ lat, lng, accuracy: rawAcc, ts: Date.now() });
-    // Keep a slightly longer history table for better smoothing
     if (gpsHistoryRef.current.length > 8) gpsHistoryRef.current.shift();
     
     let weightedLat = 0, weightedLng = 0, totalWeight = 0, minAcc = rawAcc;
     
-    // Improved Kalman-style weighted averaging
     if (rawAcc >= 3) {
       gpsHistoryRef.current.forEach(p => {
-        // Punish low accuracy exponentially so accurate points pull coordinate tighter
         const w = 1 / Math.pow(p.accuracy, 2); 
         totalWeight += w;
         weightedLat += p.lat * w;
@@ -414,12 +510,17 @@ export default function App() {
       weightedLat /= totalWeight;
       weightedLng /= totalWeight;
     } else {
-      // Sub-3m accuracy is considered "Ground Truth"
       weightedLat = lat; 
       weightedLng = lng;
     }
 
     lastPositionRef.current = [weightedLat, weightedLng];
+    
+    // RECORDING GPS PATH
+    if (isRecordingGPS && activePathLayerRef.current) {
+      recordedPathRef.current.push([weightedLat, weightedLng]);
+      activePathLayerRef.current.setLatLngs(recordedPathRef.current);
+    }
     
     setGpsData({
       lat: weightedLat, lng: weightedLng,
@@ -491,6 +592,32 @@ export default function App() {
 
       <div id="map" className="w-full h-full absolute top-0 left-0 z-0"></div>
 
+      {isManualCrosshair && (
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[1000] pointer-events-none">
+          <Crosshair size={40} className="text-indigo-600 drop-shadow-md" />
+        </div>
+      )}
+
+      {/* FAB Controls for GLandGO features */}
+      <div className="absolute bottom-24 right-4 flex flex-col gap-3 z-[1500]">
+        {isRecordingGPS && (
+          <button onClick={toggleGPSRecord} className="flex items-center gap-2 bg-red-500 text-white px-4 py-3 rounded-full shadow-lg font-bold animate-pulse">
+            <Square size={20} fill="currentColor" /> Stop & Save
+          </button>
+        )}
+        
+        {isManualCrosshair && (
+          <>
+            <button onClick={addPointFromCrosshair} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-3 rounded-full shadow-lg font-bold">
+              <Plus size={20} /> Add Point
+            </button>
+            <button onClick={finishManualCrosshair} className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-3 rounded-full shadow-lg font-bold">
+              <Square size={20} fill="currentColor" /> Finish Shape
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="coordinates-display">
         <div className="font-semibold text-gray-700 mb-1 text-[10px] uppercase tracking-wider">GPS Data</div>
         <div className="text-[10px] text-gray-600 font-mono">
@@ -553,9 +680,32 @@ export default function App() {
 
       <div className={`tool-tray ${activeTray === 'draw' ? 'active' : ''}`}>
         <div className="flex justify-between items-center mb-3">
-          <h3 className="font-bold text-gray-800">Drawing Tools</h3>
+          <h3 className="font-bold text-gray-800">Advanced Measurement</h3>
           <button onClick={() => setActiveTray(null)}><X size={20} className="text-gray-400" /></button>
         </div>
+        
+        {/* GLandGO Style Methods */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <button onClick={toggleGPSRecord} className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isRecordingGPS ? 'bg-red-50 border-red-500 text-red-600' : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'}`}>
+            <Play size={24} className="mb-2" />
+            <span className="font-bold text-sm">Walk (GPS)</span>
+          </button>
+          
+          <button onClick={toggleManualCrosshair} className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isManualCrosshair ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'}`}>
+            <Crosshair size={24} className="mb-2" />
+            <span className="font-bold text-sm">Manual Drop</span>
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-3 mb-4 px-1">
+          <span className="text-sm font-semibold text-gray-600">Save as:</span>
+          <select value={recordType} onChange={e => setRecordType(e.target.value)} className="bg-white border border-gray-200 rounded-md px-2 py-1 text-sm outline-none">
+            <option value="polygon">Area (Polygon)</option>
+            <option value="polyline">Distance (Line)</option>
+          </select>
+        </div>
+
+        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tap Mapping</h4>
         <div className="grid grid-cols-4 gap-3">
           {[
             { id: 'polygon', icon: <PenSquare/>, label: 'Area', color: 'blue' },
@@ -572,7 +722,8 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
+        
+        <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
           <button onClick={editLayers} className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium active:bg-gray-200">
             <Edit2 size={16} /> Edit Mode
           </button>
@@ -600,12 +751,11 @@ export default function App() {
                 <div>
                   <div className="text-sm font-semibold text-gray-800 flex items-center gap-1">
                     {l.name}
-                    {(l.type === 'polygon' || l.type === 'rectangle') && <Leaf size={12} className="text-emerald-500" />}
                   </div>
                   <div className="text-xs text-gray-400 space-x-2">
-                    <span>{new Date(l.timestamp).toLocaleTimeString()}</span>
+                    <span className="font-medium text-indigo-500">{l.method || 'Manual'}</span>
                     <span>•</span>
-                    <span>Acc: {l.gpsAccuracy}m</span>
+                    <span>{new Date(l.timestamp).toLocaleTimeString()}</span>
                   </div>
                 </div>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 bg-gray-50 text-gray-500 rounded-md border border-gray-100">{l.type}</span>
@@ -626,14 +776,14 @@ export default function App() {
               <Download size={24} />
             </div>
             <span className="font-semibold text-gray-700">Export</span>
-            <span className="text-[10px] text-gray-400">Save as GeoJSON</span>
+            <span className="text-[10px] text-gray-400">Save as GeoJSON/KML</span>
           </button>
           <label className="p-4 bg-white border border-gray-100 shadow-sm rounded-2xl flex flex-col items-center active:scale-95 transition-all cursor-pointer">
             <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-2">
               <Upload size={24} />
             </div>
             <span className="font-semibold text-gray-700">Import</span>
-            <span className="text-[10px] text-gray-400">Load GeoJSON</span>
+            <span className="text-[10px] text-gray-400">Load File</span>
             <input type="file" className="hidden" accept=".geojson,.json" onChange={handleImport} />
           </label>
         </div>
@@ -717,10 +867,10 @@ export default function App() {
 
       <div className="bottom-nav">
         {[
-          { id: 'draw', icon: PenSquare, label: 'Draw' },
-          { id: 'layers', icon: List, label: 'Layers' },
-          { id: 'data', icon: Database, label: 'Data' },
-          { id: 'info', icon: Info, label: 'Info' }
+          { id: 'draw', icon: PenSquare, label: 'Measure' },
+          { id: 'layers', icon: List, label: 'Projects' },
+          { id: 'data', icon: Database, label: 'Export' },
+          { id: 'info', icon: Info, label: 'Settings' }
         ].map(item => (
           <button key={item.id} onClick={() => handleMenuClick(item.id)} className={`nav-btn ${activeTray === item.id ? 'active' : ''}`}>
             <item.icon size={22} className="mb-1" strokeWidth={activeTray === item.id ? 2.5 : 2} />
