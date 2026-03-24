@@ -1,0 +1,62 @@
+{
+  "name": "LandMapper GIS - Tea Plantation Mapper",
+  "short_name": "LandMapper",
+  "description": "Professional mobile GIS app for tea plantation land mapping with high-precision GPS",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect fill='%234f46e5' width='512' height='512'/%3E%3Cpath fill='%23fff' d='M256 64l-96 96h64v128h64V160h64z'/%3E%3Cpath fill='%2310b981' d='M128 320h256v64H128z'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect fill='%234f46e5' width='512' height='512'/%3E%3Cpath fill='%23fff' d='M256 64l-96 96h64v128h64V160h64z'/%3E%3Cpath fill='%2310b981' d='M128 320h256v64H128z'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "productivity",
+    "utilities",
+    "navigation"
+  ],
+  "screenshots": [],
+  "permissions": [
+    "geolocation"
+  ],
+  "shortcuts": [
+    {
+      "name": "New Measurement",
+      "short_name": "Measure",
+      "description": "Start a new land measurement",
+      "url": "index.html?action=measure",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%234f46e5' width='192' height='192' rx='20'/%3E%3Cpath fill='%23fff' d='M96 32v128M32 96h128' stroke='%23fff' stroke-width='16' stroke-linecap='round'/%3E%3C/svg%3E",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Export Data",
+      "short_name": "Export",
+      "description": "Export your mappings",
+      "url": "index.html?action=export",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%234f46e5' width='192' height='192' rx='20'/%3E%3Cpath fill='%23fff' d='M96 32v80M64 80l32 32 32-32M32 144h128' stroke='%23fff' stroke-width='16' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}

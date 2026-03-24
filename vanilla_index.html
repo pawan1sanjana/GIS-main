@@ -1,0 +1,1706 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LandMapper GIS - Mobile Land Mapping App</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="description"
+        content="Professional mobile GIS app for tea plantation land mapping with high-precision GPS">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LandMapper">
+    <link rel="apple-touch-icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect fill='%234f46e5' width='512' height='512'/%3E%3Cpath fill='%23fff' d='M256 64l-96 96h64v128h64V160h64z'/%3E%3Cpath fill='%2310b981' d='M128 320h256v64H128z'/%3E%3C/svg%3E">
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        #map {
+            height: 100vh;
+            width: 100%;
+            position: relative;
+            z-index: 0;
+        }
+
+        /* Fix Zoom Control Visibility */
+        .leaflet-bottom {
+            bottom: 80px !important;
+            /* Lift above bottom nav */
+        }
+
+        /* Visual Compass Widget */
+        .compass-widget {
+            position: fixed;
+            top: 160px;
+            /* Below measurement pill */
+            right: 10px;
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s;
+            border: 2px solid white;
+        }
+
+        .compass-arrow {
+            font-size: 24px;
+            color: #ef4444;
+            transition: transform 0.1s ease-out;
+        }
+
+        .compass-label {
+            position: absolute;
+            top: -5px;
+            font-size: 10px;
+            font-weight: 800;
+            color: #1f2937;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        /* Tea Plantation Specific Styles */
+        .tea-plantation-badge {
+            background: linear-gradient(135deg, #065f46 0%, #10b981 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+
+        .leaflet-control-custom {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            padding: 8px;
+        }
+
+        .tool-btn {
+            transition: all 0.2s;
+        }
+
+        .tool-btn:active {
+            transform: scale(0.95);
+        }
+
+        .tool-btn.active {
+            background: #4f46e5;
+            color: white;
+            border-color: #4f46e5;
+        }
+
+        .coordinates-display {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            font-size: 11px;
+            max-width: 120px;
+            pointer-events: none;
+        }
+
+        .layer-item {
+            padding: 10px;
+            border-radius: 8px;
+            background: #f9fafb;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #e5e7eb;
+        }
+
+        /* Bottom Bar Styles */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: white;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+            z-index: 2000;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            height: 65px;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        .nav-btn {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+            font-size: 10px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-btn i {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .nav-btn.active {
+            color: #4f46e5;
+        }
+
+        .tool-tray {
+            position: fixed;
+            bottom: 80px;
+            /* Above bottom nav */
+            left: 10px;
+            right: 10px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            padding: 16px;
+            z-index: 1500;
+            transform: translateY(20px);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .tool-tray.active {
+            transform: translateY(0);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .measurement-pill {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(4px);
+            padding: 8px 16px;
+            border-radius: 50px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            pointer-events: none;
+            /* Allow clicking map through it if needed, but usually we want to read it */
+            white-space: nowrap;
+        }
+
+        .measurement-pill span {
+            display: flex;
+            align-items: center;
+        }
+
+        .measurement-pill i {
+            margin-right: 6px;
+            color: #4f46e5;
+        }
+
+        /* Mobile improvements */
+        .touch-manipulation {
+            touch-action: manipulation;
+        }
+
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        /* Loading Overlay */
+        #loadingOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.3s;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .location-btn-active {
+            color: #4f46e5 !important;
+        }
+
+        .location-btn-follow {
+            color: #4f46e5 !important;
+            background-color: #e0e7ff !important;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        }
+    </style>
+</head>
+
+<body class="overflow-hidden touch-manipulation">
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay">
+        <div class="spinner mb-4"></div>
+        <div class="text-gray-700 font-medium">Locating...</div>
+        <div class="text-xs text-gray-500 mt-2">Waiting for GPS signal</div>
+    </div>
+
+    <!-- Map Container -->
+    <div id="map" class="touch-manipulation"></div>
+
+    <!-- Coordinates Display -->
+    <div class="coordinates-display" id="coordsDisplay">
+        <div class="font-semibold text-gray-700 mb-1 text-[10px] uppercase tracking-wider">GPS Data</div>
+        <div class="text-[10px] text-gray-600 font-mono">
+            <div><span class="text-gray-400">Lat:</span> <span id="latDisplay" class="font-semibold">-</span></div>
+            <div><span class="text-gray-400">Lng:</span> <span id="lngDisplay" class="font-semibold">-</span></div>
+            <div><span class="text-gray-400">Acc:</span> <span id="accuracyDisplay" class="font-semibold">-</span>m
+            </div>
+            <div id="compassDisplay" class="mt-1 text-[11px]">
+                <i class="fas fa-compass text-blue-500"></i> -
+            </div>
+        </div>
+    </div>
+
+    <!-- Compass Widget -->
+    <div id="compassWidget" class="compass-widget hidden">
+        <div class="compass-label">N</div>
+        <i class="fas fa-arrow-up compass-arrow" id="compassArrow"></i>
+    </div>
+
+    <!-- Measurement Floating Pill -->
+    <div id="measurementPill" class="measurement-pill hidden">
+        <span id="measureAreaBox" class="border-r border-gray-300 pr-3 mr-3">
+            <i class="fas fa-vector-square"></i>
+            <span id="areaValue">0 m²</span>
+        </span>
+        <span id="measureDistBox">
+            <i class="fas fa-ruler-combined"></i>
+            <span id="perimeterValue">0 m</span>
+        </span>
+    </div>
+
+    <!-- Top Controls with Undo/Redo -->
+    <div class="fixed top-4 left-4 z-[1000] flex flex-col gap-2 no-select">
+        <button onclick="toggleBaseMap()"
+            class="bg-white w-10 h-10 rounded-lg shadow-md flex items-center justify-center active:bg-gray-50 tool-btn">
+            <i class="fas fa-layer-group text-gray-700"></i>
+        </button>
+        <button onclick="toggleLocationFollow()" id="locationBtn"
+            class="bg-white w-10 h-10 rounded-lg shadow-md flex items-center justify-center active:bg-gray-50 tool-btn location-btn-active">
+            <i class="fas fa-location-crosshairs"></i>
+        </button>
+        <button onclick="undoAction()" id="undoBtn"
+            class="bg-white w-10 h-10 rounded-lg shadow-md flex items-center justify-center active:bg-gray-50 disabled:opacity-50"
+            disabled>
+            <i class="fas fa-undo text-gray-700"></i>
+        </button>
+        <button onclick="redoAction()" id="redoBtn"
+            class="bg-white w-10 h-10 rounded-lg shadow-md flex items-center justify-center active:bg-gray-50 disabled:opacity-50"
+            disabled>
+            <i class="fas fa-redo text-gray-700"></i>
+        </button>
+        <button onclick="toggleFullscreen()"
+            class="bg-white w-10 h-10 rounded-lg shadow-md flex items-center justify-center active:bg-gray-50 tool-btn">
+            <i class="fas fa-expand text-gray-700"></i>
+        </button>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <div class="bottom-nav">
+        <button onclick="toggleTray('draw')" class="nav-btn" id="nav-draw">
+            <i class="fas fa-pen-to-square"></i>
+            <span>Draw</span>
+        </button>
+        <button onclick="toggleTray('layers')" class="nav-btn" id="nav-layers">
+            <i class="fas fa-list-ul"></i>
+            <span>Layers</span>
+        </button>
+        <button onclick="toggleTray('data')" class="nav-btn" id="nav-data">
+            <i class="fas fa-database"></i>
+            <span>Data</span>
+        </button>
+        <button onclick="toggleTray('info')" class="nav-btn" id="nav-info">
+            <i class="fas fa-circle-info"></i>
+            <span>Info</span>
+        </button>
+    </div>
+
+    <!-- Drawing Tray -->
+    <div id="drawTray" class="tool-tray">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-gray-800">Drawing Tools</h3>
+            <button onclick="closeTrays()" class="text-gray-400 hover:text-gray-600"><i
+                    class="fas fa-times"></i></button>
+        </div>
+        <div class="grid grid-cols-4 gap-3">
+            <button onclick="startDrawing('polygon')"
+                class="flex flex-col items-center p-2 bg-gray-50 rounded-xl active:bg-blue-50 transition-colors tool-btn"
+                id="polygonBtn">
+                <div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-1">
+                    <i class="fas fa-draw-polygon"></i>
+                </div>
+                <span class="text-xs font-medium text-gray-600">Area</span>
+            </button>
+            <button onclick="startDrawing('polyline')"
+                class="flex flex-col items-center p-2 bg-gray-50 rounded-xl active:bg-blue-50 transition-colors tool-btn"
+                id="polylineBtn">
+                <div class="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-1">
+                    <i class="fas fa-route"></i>
+                </div>
+                <span class="text-xs font-medium text-gray-600">Line</span>
+            </button>
+            <button onclick="startDrawing('marker')"
+                class="flex flex-col items-center p-2 bg-gray-50 rounded-xl active:bg-blue-50 transition-colors tool-btn"
+                id="markerBtn">
+                <div class="w-10 h-10 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-1">
+                    <i class="fas fa-map-marker-alt"></i>
+                </div>
+                <span class="text-xs font-medium text-gray-600">Point</span>
+            </button>
+            <button onclick="startDrawing('circle')"
+                class="flex flex-col items-center p-2 bg-gray-50 rounded-xl active:bg-blue-50 transition-colors tool-btn"
+                id="circleBtn">
+                <div class="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-1">
+                    <i class="fas fa-circle"></i>
+                </div>
+                <span class="text-xs font-medium text-gray-600">Circle</span>
+            </button>
+        </div>
+        <div class="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
+            <button onclick="editLayers()"
+                class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium active:bg-gray-200">
+                <i class="fas fa-pen mr-2"></i>Edit Mode
+            </button>
+            <button onclick="deleteLayers()"
+                class="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium active:bg-red-100">
+                <i class="fas fa-trash mr-2"></i>Clear All
+            </button>
+        </div>
+    </div>
+
+    <!-- Layers Tray -->
+    <div id="layersTray" class="tool-tray">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-gray-800">Layers</h3>
+            <div class="text-xs text-gray-500"><span id="parcelCount">0</span> features</div>
+            <button onclick="closeTrays()" class="text-gray-400 hover:text-gray-600"><i
+                    class="fas fa-times"></i></button>
+        </div>
+        <div id="layersList" class="max-h-48 overflow-y-auto -mx-2 px-2">
+            <div class="flex flex-col items-center justify-center py-8 text-gray-400">
+                <i class="fas fa-layer-group text-2xl mb-2"></i>
+                <span class="text-sm">No layers yet</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Tray -->
+    <div id="dataTray" class="tool-tray">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-gray-800">Data Management</h3>
+            <button onclick="closeTrays()" class="text-gray-400 hover:text-gray-600"><i
+                    class="fas fa-times"></i></button>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <button onclick="exportData()"
+                class="p-4 bg-gray-50 rounded-xl flex flex-col items-center active:bg-blue-50 border border-transparent active:border-blue-200 transition-all">
+                <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-file-export text-xl"></i>
+                </div>
+                <span class="font-medium text-gray-700">Export</span>
+                <span class="text-xs text-gray-500">Save as GeoJSON</span>
+            </button>
+            <button onclick="importData()"
+                class="p-4 bg-gray-50 rounded-xl flex flex-col items-center active:bg-purple-50 border border-transparent active:border-purple-200 transition-all">
+                <div class="w-12 h-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-file-import text-xl"></i>
+                </div>
+                <span class="font-medium text-gray-700">Import</span>
+                <span class="text-xs text-gray-500">Load GeoJSON</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Info Tray -->
+    <div id="infoTray" class="tool-tray" style="max-height: 70vh; overflow-y: auto;">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-gray-800">Settings & Info</h3>
+            <button onclick="closeTrays()" class="text-gray-400 hover:text-gray-600"><i
+                    class="fas fa-times"></i></button>
+        </div>
+
+        <!-- PWA Install Button (Hidden by default) -->
+        <div id="pwaInstallContainer" class="hidden mb-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 bg-indigo-600 text-white rounded-lg flex items-center justify-center shadow-sm">
+                    <i class="fas fa-mobile-screen"></i>
+                </div>
+                <div>
+                    <h4 class="text-sm font-bold text-indigo-900">Install LandMapper</h4>
+                    <p class="text-xs text-indigo-700 leading-tight">Install for offline use and faster access.</p>
+                </div>
+            </div>
+            <button id="installPwaBtn"
+                class="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-indigo-700 active:scale-95 transition-all">
+                Install Now
+            </button>
+        </div>
+
+        <!-- Tea Plantation Badge -->
+        <div class="tea-plantation-badge text-center mb-3">
+            <i class="fas fa-leaf mr-1"></i> Tea Plantation Mapper
+        </div>
+
+        <!-- Total Area with Units -->
+        <div class="bg-gradient-to-r from-green-600 to-emerald-500 rounded-xl p-4 text-white shadow-lg mb-4">
+            <div class="text-xs opacity-80 uppercase tracking-wider mb-1">Total Plantation Area</div>
+            <div class="text-2xl font-bold" id="totalAreaDisplay">0 m²</div>
+            <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+                <div class="bg-white/20 rounded px-2 py-1">
+                    <span class="opacity-80">Hectares:</span>
+                    <span class="font-semibold" id="areaHa">0</span>
+                </div>
+                <div class="bg-white/20 rounded px-2 py-1">
+                    <span class="opacity-80">Acres:</span>
+                    <span class="font-semibold" id="areaAc">0</span>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-2 text-xs">
+                <div class="bg-white/20 rounded px-2 py-1">
+                    <span class="opacity-80">Est. Plants:</span>
+                    <span class="font-semibold" id="plantCount">0</span>
+                </div>
+                <div class="bg-white/20 rounded px-2 py-1">
+                    <span class="opacity-80">Plots:</span>
+                    <span class="font-semibold" id="plotCount">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Unit Settings -->
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">Measurement Units</h4>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="text-xs text-gray-600">Area</label>
+                    <select id="areaUnit" onchange="updateUnits()" class="w-full text-sm border rounded px-2 py-1">
+                        <option value="metric">Metric (m²/ha)</option>
+                        <option value="imperial">Imperial (ft²/ac)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Distance</label>
+                    <select id="distUnit" onchange="updateUnits()" class="w-full text-sm border rounded px-2 py-1">
+                        <option value="metric">Metric (m/km)</option>
+                        <option value="imperial">Imperial (ft/mi)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- GPS Status -->
+        <div class="mb-4 bg-gray-50 rounded-lg p-3">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">
+                <i class="fas fa-satellite text-blue-500 mr-1"></i>
+                GPS Status
+            </h4>
+            <div class="text-xs space-y-1">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Accuracy:</span>
+                    <span class="font-mono font-semibold" id="gpsAccuracy">-</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Samples:</span>
+                    <span class="font-mono font-semibold" id="gpsSamples">0/5</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Status:</span>
+                    <span class="font-semibold text-green-600" id="gpsStatus">Active</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- About Section -->
+        <div class="border-t pt-3">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">About</h4>
+            <div class="text-xs text-gray-600 space-y-2">
+                <div>
+                    <strong>LandMapper GIS</strong> v1.0.0<br>
+                    Professional Land Surveying App
+                </div>
+                <div class="border-l-2 border-blue-400 pl-2">
+                    High-precision GPS mapping with sub-meter accuracy capabilities when conditions allow.
+                </div>
+                <div class="text-[10px] opacity-75">
+                    © 2024 LandMapper GIS<br>
+                    Powered by Leaflet, Turf.js
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="fileInput" style="display: none;" accept=".geojson,.json">
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Leaflet Draw JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <!-- Turf.js for GIS calculations -->
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+    <!-- LocalForage for Offline Storage -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+
+    <script>
+        // Initialize map
+        let map;
+        let drawnItems;
+        let drawControl;
+        let currentBaseLayer = 'satellite'; // Start with satellite for plantations
+        let locationMarker;
+        let locationCircle;
+        let watchId;
+        let layers = [];
+        let selectedLayer = null;
+        let followUser = true;
+        let isUserInteracting = false;
+        let lastPosition = null;
+
+        // Undo/Redo history stacks
+        let undoStack = [];
+        let redoStack = [];
+        const MAX_HISTORY = 50;
+
+        // Tea plantation specific constants
+        const TEA_PLANTS_PER_HECTARE = 13000; // Average tea plants per hectare
+        const MIN_ACCURACY_THRESHOLD = 10; // Minimum GPS accuracy in meters
+
+        // Base layers
+        const baseLayers = {
+            osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }),
+            satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '© Esri',
+                maxZoom: 19
+            }),
+            terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenTopoMap',
+                maxZoom: 17
+            })
+        };
+
+        // PWA Offline Storage
+        const STORAGE_KEY = 'landmapper_data';
+
+        async function saveOfflineData() {
+            try {
+                // Ensure features have custom properties before saving
+                drawnItems.eachLayer(layer => {
+                    const layerId = L.stamp(layer);
+                    const info = layers.find(l => l.id === layerId);
+                    if (info) {
+                        layer.feature = layer.feature || { type: 'Feature', properties: {} };
+                        layer.feature.properties = {
+                            name: info.name,
+                            timestamp: info.timestamp,
+                            gpsAccuracy: info.gpsAccuracy,
+                            type: info.type
+                        };
+                    }
+                });
+                const geojson = drawnItems.toGeoJSON();
+                await localforage.setItem(STORAGE_KEY, geojson);
+            } catch (err) {
+                console.error('Failed to save offline data', err);
+            }
+        }
+
+        async function loadOfflineData() {
+            try {
+                const geojson = await localforage.getItem(STORAGE_KEY);
+                if (geojson && geojson.features && geojson.features.length > 0) {
+                    L.geoJSON(geojson, {
+                        onEachFeature: function (feature, layer) {
+                            drawnItems.addLayer(layer);
+                            const layerId = L.stamp(layer);
+
+                            // Determine type if not stored
+                            let type = feature.properties?.type;
+                            if (!type) {
+                                type = feature.geometry.type.toLowerCase().includes('polygon') ? 'polygon' :
+                                    feature.geometry.type.toLowerCase().includes('linestring') ? 'polyline' : 'marker';
+                            }
+
+                            const layerInfo = {
+                                id: layerId,
+                                type: type,
+                                layer: layer,
+                                name: feature.properties?.name || `Restored Layer ${layers.length + 1}`,
+                                timestamp: feature.properties?.timestamp || new Date().toISOString(),
+                                gpsAccuracy: feature.properties?.gpsAccuracy || '-'
+                            };
+                            layers.push(layerInfo);
+
+                            // Rehydrate popup
+                            layer.bindPopup(`
+                                <div class="p-2">
+                                    <strong>${layerInfo.name}</strong><br>
+                                    <small>Created: ${new Date(layerInfo.timestamp).toLocaleString()}</small><br>
+                                    <small>GPS Accuracy: ${layerInfo.gpsAccuracy}${layerInfo.gpsAccuracy !== '-' ? 'm' : ''}</small>
+                                </div>
+                            `);
+                        }
+                    });
+
+                    updateUI();
+                }
+            } catch (err) {
+                console.error('Failed to load offline data', err);
+            }
+        }
+
+        function handleAppShortcuts() {
+            const params = new URLSearchParams(window.location.search);
+            const action = params.get('action');
+            if (action === 'measure') {
+                toggleTray('draw');
+                startDrawing('polygon');
+            } else if (action === 'export') {
+                toggleTray('data');
+            }
+        }
+
+        function initMap() {
+            // Initialize map
+            map = L.map('map', {
+                center: [0, 0],
+                zoom: 2,
+                zoomControl: false,
+                tap: true // Enable tap support for mobile
+            });
+
+            // Add zoom control to bottom right
+            L.control.zoom({
+                position: 'bottomright'
+            }).addTo(map);
+
+            // Add default base layer
+            baseLayers.satellite.addTo(map);
+
+            // Initialize drawn items layer
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+
+            // Initialize draw control
+            drawControl = new L.Control.Draw({
+                draw: false,
+                edit: {
+                    featureGroup: drawnItems,
+                    remove: true,
+                    edit: true
+                }
+            });
+
+            // Map event handlers
+            map.on('draw:created', handleDrawCreated);
+            map.on('draw:edited', handleDrawEdited);
+            map.on('draw:deleted', handleDrawDeleted);
+            map.on('mousemove', updateCoordinates);
+            map.on('click', handleMapClick);
+
+            // Detect user interaction to pause following
+            map.on('dragstart', () => {
+                if (followUser) {
+                    followUser = false;
+                    updateLocationButtonState();
+                }
+            });
+
+            // Sync initial button state
+            updateLocationButtonState();
+
+            // Load offline data first, then get location and handle shortcuts
+            loadOfflineData().then(() => {
+                if (layers.length > 0) {
+                    try {
+                        map.fitBounds(drawnItems.getBounds());
+                        followUser = false; // Don't auto-pan away from saved features initially
+                        updateLocationButtonState();
+                    } catch (e) { }
+                }
+                startLocationTracking();
+                handleAppShortcuts();
+            });
+        }
+
+        function toggleTray(trayName) {
+            // Close all trays first
+            const allTrays = document.querySelectorAll('.tool-tray');
+            const allNavBtns = document.querySelectorAll('.nav-btn');
+
+            let targetTray = document.getElementById(trayName + 'Tray');
+            let targetBtn = document.getElementById('nav-' + trayName);
+
+            const wasActive = targetTray.classList.contains('active');
+
+            // Reset
+            allTrays.forEach(t => t.classList.remove('active'));
+            allNavBtns.forEach(b => b.classList.remove('active'));
+
+            if (!wasActive) {
+                targetTray.classList.add('active');
+                targetBtn.classList.add('active');
+            }
+        }
+
+        function closeTrays() {
+            document.querySelectorAll('.tool-tray').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        }
+
+        function handleDrawCreated(e) {
+            const layer = e.layer;
+            const type = e.layerType;
+
+            // Save state for undo
+            saveStateForUndo();
+
+            drawnItems.addLayer(layer);
+
+            // Add to layers list
+            const layerId = L.stamp(layer);
+            const layerInfo = {
+                id: layerId,
+                type: type,
+                layer: layer,
+                name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${layers.length + 1}`,
+                timestamp: new Date().toISOString(),
+                gpsAccuracy: document.getElementById('accuracyDisplay').textContent
+            };
+
+            layers.push(layerInfo);
+
+            // Calculate measurements
+            if (type === 'polygon' || type === 'rectangle') {
+                calculatePolygonMeasurements(layer);
+            } else if (type === 'polyline') {
+                calculateLineMeasurements(layer);
+            } else if (type === 'circle') {
+                calculateCircleMeasurements(layer);
+            }
+
+            // Add enhanced popup with GPS accuracy
+            layer.bindPopup(`
+                <div class="p-2">
+                    <strong>${layerInfo.name}</strong><br>
+                    <small>Created: ${new Date(layerInfo.timestamp).toLocaleString()}</small><br>
+                    <small>GPS Accuracy: ${layerInfo.gpsAccuracy}m</small>
+                </div>
+            `);
+
+            updateUI();
+            updateUndoRedoButtons();
+
+            // Persist to offline storage
+            saveOfflineData();
+
+            deactivateDrawing();
+            closeTrays();
+        }
+
+        // Undo/Redo functionality
+        function saveStateForUndo() {
+            const currentState = {
+                layers: layers.map(l => ({ ...l, layer: null })),
+                drawnGeoJSON: drawnItems.toGeoJSON()
+            };
+
+            undoStack.push(currentState);
+            if (undoStack.length > MAX_HISTORY) {
+                undoStack.shift();
+            }
+
+            // Clear redo stack on new action
+            redoStack = [];
+        }
+
+        function undoAction() {
+            if (undoStack.length === 0) return;
+
+            // Save current state to redo stack
+            const currentState = {
+                layers: layers.map(l => ({ ...l, layer: null })),
+                drawnGeoJSON: drawnItems.toGeoJSON()
+            };
+            redoStack.push(currentState);
+
+            // Restore previous state
+            const previousState = undoStack.pop();
+            restoreState(previousState);
+            updateUndoRedoButtons();
+        }
+
+        function redoAction() {
+            if (redoStack.length === 0) return;
+
+            // Save current state to undo stack
+            saveStateForUndo();
+
+            // Restore next state
+            const nextState = redoStack.pop();
+            restoreState(nextState);
+            updateUndoRedoButtons();
+        }
+
+        function restoreState(state) {
+            // Clear current layers
+            drawnItems.clearLayers();
+            layers = [];
+
+            // Restore from GeoJSON
+            if (state.drawnGeoJSON && state.drawnGeoJSON.features) {
+                L.geoJSON(state.drawnGeoJSON, {
+                    onEachFeature: function (feature, layer) {
+                        drawnItems.addLayer(layer);
+                        const layerId = L.stamp(layer);
+                        const restoredLayer = state.layers.find(l => l.name === feature.properties?.name);
+                        if (restoredLayer) {
+                            layers.push({
+                                ...restoredLayer,
+                                id: layerId,
+                                layer: layer
+                            });
+                        }
+                    }
+                });
+            }
+
+            updateUI();
+            saveOfflineData();
+        }
+
+        function updateUndoRedoButtons() {
+            document.getElementById('undoBtn').disabled = undoStack.length === 0;
+            document.getElementById('redoBtn').disabled = redoStack.length === 0;
+        }
+
+        function handleDrawEdited(e) {
+            e.layers.eachLayer(function (layer) {
+                if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+                    calculatePolygonMeasurements(layer);
+                } else if (layer instanceof L.Polyline) {
+                    calculateLineMeasurements(layer);
+                } else if (layer instanceof L.Circle) {
+                    calculateCircleMeasurements(layer);
+                }
+            });
+            updateUI();
+            saveOfflineData();
+        }
+
+        function handleDrawDeleted(e) {
+            e.layers.eachLayer(function (layer) {
+                const layerId = L.stamp(layer);
+                layers = layers.filter(l => l.id !== layerId);
+            });
+            updateUI();
+            document.getElementById('measurementPill').classList.add('hidden');
+            saveOfflineData();
+        }
+
+        function handleMapClick(e) {
+            // Close trays when clicking the map to ensure full view
+            closeTrays();
+        }
+
+        function calculatePolygonMeasurements(layer) {
+            const latlngs = layer.getLatLngs()[0];
+            const coordinates = latlngs.map(ll => [ll.lng, ll.lat]);
+            coordinates.push(coordinates[0]); // Close the polygon
+
+            const polygon = turf.polygon([coordinates]);
+            const area = turf.area(polygon);
+            const perimeter = turf.length(turf.lineString(coordinates), { units: 'meters' }) * 1000;
+
+            displayMeasurements(area, perimeter);
+        }
+
+        function calculateLineMeasurements(layer) {
+            const latlngs = layer.getLatLngs();
+            const coordinates = latlngs.map(ll => [ll.lng, ll.lat]);
+
+            const line = turf.lineString(coordinates);
+            const length = turf.length(line, { units: 'meters' }) * 1000;
+
+            displayMeasurements(null, length);
+        }
+
+        function calculateCircleMeasurements(layer) {
+            const radius = layer.getRadius();
+            const area = Math.PI * radius * radius;
+            const perimeter = 2 * Math.PI * radius;
+
+            displayMeasurements(area, perimeter);
+        }
+
+        function displayMeasurements(area, perimeter) {
+            const pill = document.getElementById('measurementPill');
+            pill.classList.remove('hidden');
+
+            const areaBox = document.getElementById('measureAreaBox');
+            const distBox = document.getElementById('measureDistBox');
+
+            if (area !== null) {
+                areaBox.style.display = 'inline-flex';
+                document.getElementById('areaValue').textContent = convertArea(area, currentAreaUnit);
+            } else {
+                areaBox.style.display = 'none';
+            }
+
+            if (perimeter !== null) {
+                document.getElementById('perimeterValue').textContent = convertDistance(perimeter, currentDistUnit);
+            }
+        }
+
+        function startDrawing(type) {
+            deactivateDrawing();
+
+            let drawHandler;
+            switch (type) {
+                case 'polygon':
+                    drawHandler = new L.Draw.Polygon(map, drawControl.options.draw.polygon);
+                    document.getElementById('polygonBtn').classList.add('bg-blue-100', 'border-blue-200');
+                    break;
+                case 'polyline':
+                    drawHandler = new L.Draw.Polyline(map, drawControl.options.draw.polyline);
+                    document.getElementById('polylineBtn').classList.add('bg-blue-100', 'border-blue-200');
+                    break;
+                case 'marker':
+                    drawHandler = new L.Draw.Marker(map, drawControl.options.draw.marker);
+                    document.getElementById('markerBtn').classList.add('bg-blue-100', 'border-blue-200');
+                    break;
+                case 'circle':
+                    drawHandler = new L.Draw.Circle(map, drawControl.options.draw.circle);
+                    document.getElementById('circleBtn').classList.add('bg-blue-100', 'border-blue-200');
+                    break;
+            }
+
+            if (drawHandler) {
+                drawHandler.enable();
+                // Close tray so user can see map
+                closeTrays();
+            }
+        }
+
+        function deactivateDrawing() {
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-100', 'border-blue-200');
+            });
+        }
+
+        // GPS smoothing and accuracy enhancement
+        let gpsHistory = [];
+        const MAX_GPS_SAMPLES = 5;
+        let compassHeading = null;
+
+        function startLocationTracking() {
+            if (navigator.geolocation) {
+                // Clear existing watch
+                if (watchId) {
+                    navigator.geolocation.clearWatch(watchId);
+                }
+
+                // Enhanced GPS options for maximum accuracy
+                const options = {
+                    enableHighAccuracy: true,
+                    timeout: 30000,
+                    maximumAge: 0,
+                    // Request high accuracy mode
+                    desiredAccuracy: 0.1,
+                    frequencyUpdate: 100
+                };
+
+                // Attempt to get initial position quickly
+                navigator.geolocation.getCurrentPosition(
+                    updatePosition,
+                    handleLocationError,
+                    options
+                );
+
+                // Watch position for continuous updates with high frequency
+                watchId = navigator.geolocation.watchPosition(
+                    updatePosition,
+                    handleLocationError,
+                    options
+                );
+
+                // Start compass if available
+                startCompass();
+            } else {
+                alert('Geolocation is not supported by this browser.');
+                document.getElementById('loadingOverlay').style.display = 'none';
+            }
+        }
+
+        function startCompass() {
+            // Check for compass availability
+            if (window.DeviceOrientationEvent) {
+                // Check if it's iOS and needs permission
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(response => {
+                            if (response === 'granted') {
+                                window.addEventListener('deviceorientation', handleCompass, true);
+                            }
+                        })
+                        .catch(console.error);
+                } else {
+                    // Non-iOS devices
+                    window.addEventListener('deviceorientationabsolute', handleCompass, true);
+                    window.addEventListener('deviceorientation', handleCompass, true);
+                }
+            }
+        }
+
+        function handleCompass(event) {
+            let heading;
+            if (event.webkitCompassHeading) {
+                // iOS
+                heading = event.webkitCompassHeading;
+            } else if (event.absolute && event.alpha !== null) {
+                // Android with absolute
+                heading = 360 - event.alpha;
+            } else if (event.alpha !== null) {
+                // Others
+                heading = 360 - event.alpha;
+            }
+
+            if (heading !== undefined) {
+                compassHeading = Math.round(heading);
+                updateCompassDisplay(compassHeading);
+            }
+        }
+
+        function updateCompassDisplay(heading) {
+            const compassDisplay = document.getElementById('compassDisplay');
+            if (compassDisplay) {
+                const cardinal = getCardinalDirection(heading);
+                compassDisplay.innerHTML = `<i class="fas fa-compass text-blue-500"></i> ${heading}° ${cardinal}`;
+            }
+
+            // Update visual widget
+            const widget = document.getElementById('compassWidget');
+            const arrow = document.getElementById('compassArrow');
+
+            if (widget && arrow) {
+                widget.classList.remove('hidden');
+                // Rotate arrow to point North relative to device heading
+                arrow.style.transform = `rotate(${-heading}deg)`;
+            }
+        }
+
+        function getCardinalDirection(heading) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            const index = Math.round(heading / 45) % 8;
+            return directions[index];
+        }
+
+        // Kalman filter for GPS smoothing
+        function smoothGPSPosition(lat, lng, accuracy) {
+            const newPoint = { lat, lng, accuracy, timestamp: Date.now() };
+
+            // Add to history
+            gpsHistory.push(newPoint);
+
+            // Keep only recent samples
+            if (gpsHistory.length > MAX_GPS_SAMPLES) {
+                gpsHistory.shift();
+            }
+
+            // If accuracy is better than 5m, use the raw value
+            if (accuracy < 5) {
+                return { lat, lng, accuracy };
+            }
+
+            // Apply weighted average based on accuracy
+            let totalWeight = 0;
+            let weightedLat = 0;
+            let weightedLng = 0;
+
+            gpsHistory.forEach(point => {
+                // Better accuracy gets higher weight
+                const weight = 1 / (point.accuracy + 1);
+                totalWeight += weight;
+                weightedLat += point.lat * weight;
+                weightedLng += point.lng * weight;
+            });
+
+            return {
+                lat: weightedLat / totalWeight,
+                lng: weightedLng / totalWeight,
+                accuracy: Math.min(...gpsHistory.map(p => p.accuracy))
+            };
+        }
+
+        function updatePosition(position) {
+            // Hide loading overlay once we have a position
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay && loadingOverlay.style.display !== 'none') {
+                loadingOverlay.style.opacity = '0';
+                setTimeout(() => {
+                    loadingOverlay.style.display = 'none';
+                }, 300);
+            }
+
+            // Apply GPS smoothing for better accuracy
+            const smoothed = smoothGPSPosition(
+                position.coords.latitude,
+                position.coords.longitude,
+                position.coords.accuracy
+            );
+
+            const lat = smoothed.lat;
+            const lng = smoothed.lng;
+            const accuracy = smoothed.accuracy;
+
+            lastPosition = [lat, lng];
+
+            // Update coordinates display with high precision
+            document.getElementById('latDisplay').textContent = lat.toFixed(7);
+            document.getElementById('lngDisplay').textContent = lng.toFixed(7);
+            // Show accuracy to 1 decimal place for sub-meter precision
+            document.getElementById('accuracyDisplay').textContent = accuracy.toFixed(1);
+
+            // Update or create location marker
+            if (locationMarker) {
+                locationMarker.setLatLng([lat, lng]);
+                locationCircle.setLatLng([lat, lng]);
+                locationCircle.setRadius(accuracy);
+            } else {
+                locationMarker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: '<div style="background: #4285F4; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); transform: translate(-2px, -2px);"></div>',
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    }),
+                    zIndexOffset: 1000
+                }).addTo(map);
+
+                locationCircle = L.circle([lat, lng], {
+                    radius: accuracy,
+                    color: '#4285F4',
+                    fillColor: '#4285F4',
+                    fillOpacity: 0.1,
+                    weight: 1
+                }).addTo(map);
+            }
+
+            // Auto-center map if follow mode is active
+            if (followUser) {
+                // If it's the very first fix (zoom is low), zoom in
+                if (map.getZoom() < 10) {
+                    map.setView([lat, lng], 18, {
+                        animate: true,
+                        duration: 1
+                    });
+                } else {
+                    map.panTo([lat, lng], {
+                        animate: true,
+                        duration: 0.5
+                    });
+                }
+            }
+        }
+
+        function handleLocationError(error) {
+            console.error('Location error:', error);
+            // If we are still on the loading screen, allow user to dismiss it
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay && loadingOverlay.style.display !== 'none') {
+                loadingOverlay.innerHTML = `
+                    <div class="text-red-500 font-medium mb-2">Location Error</div>
+                    <div class="text-sm text-gray-600 mb-4 text-center px-4">Unable to acquire GPS signal. Check permissions.</div>
+                    <button onclick="document.getElementById('loadingOverlay').style.display='none'" class="px-4 py-2 bg-gray-200 rounded-lg text-sm">Dismiss</button>
+                `;
+            }
+        }
+
+        function toggleLocationFollow() {
+            if (!lastPosition) {
+                alert('Waiting for GPS signal...');
+                return;
+            }
+
+            if (followUser) {
+                // If already following, just re-center
+                map.setView(lastPosition, 18);
+            } else {
+                // Enable follow mode
+                followUser = true;
+                map.setView(lastPosition, 18);
+            }
+            updateLocationButtonState();
+        }
+
+        function updateLocationButtonState() {
+            const btn = document.getElementById('locationBtn');
+            if (followUser) {
+                btn.classList.add('location-btn-follow');
+                btn.classList.remove('location-btn-active');
+                btn.innerHTML = '<i class="fas fa-location-arrow"></i>'; // Change icon to arrow when following
+            } else {
+                btn.classList.remove('location-btn-follow');
+                btn.classList.add('location-btn-active');
+                btn.innerHTML = '<i class="fas fa-location-crosshairs"></i>'; // Crosshairs when not following
+            }
+        }
+
+        function updateCoordinates(e) {
+            // Update cursor coordinates (optional - can be removed for mobile)
+        }
+
+        function toggleBaseMap() {
+            // Cycle through base maps
+            const maps = ['osm', 'satellite', 'terrain'];
+            const currentIndex = maps.indexOf(currentBaseLayer);
+            const nextIndex = (currentIndex + 1) % maps.length;
+            const nextMap = maps[nextIndex];
+
+            // Remove current layer
+            map.removeLayer(baseLayers[currentBaseLayer]);
+
+            // Add new layer
+            baseLayers[nextMap].addTo(map);
+            currentBaseLayer = nextMap;
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+
+
+        function editLayers() {
+            if (drawControl._map) {
+                map.removeControl(drawControl);
+            } else {
+                map.addControl(drawControl);
+            }
+        }
+
+        function deleteLayers() {
+            if (confirm('Delete all layers? This cannot be undone.')) {
+                drawnItems.clearLayers();
+                layers = [];
+                updateUI();
+                document.getElementById('measurementPill').classList.add('hidden');
+                saveOfflineData();
+            }
+        }
+
+        async function exportData() {
+            if (layers.length === 0) {
+                alert('No layers to export');
+                return;
+            }
+
+            // Ensure features have their latest properties
+            drawnItems.eachLayer(layer => {
+                const layerId = L.stamp(layer);
+                const info = layers.find(l => l.id === layerId);
+                if (info) {
+                    layer.feature = layer.feature || { type: 'Feature', properties: {} };
+                    layer.feature.properties = {
+                        name: info.name,
+                        timestamp: info.timestamp,
+                        gpsAccuracy: info.gpsAccuracy,
+                        type: info.type
+                    };
+                }
+            });
+
+            const geojson = drawnItems.toGeoJSON();
+            geojson.properties = {
+                exported: new Date().toISOString(),
+                layerCount: layers.length
+            };
+
+            const dataStr = JSON.stringify(geojson, null, 2);
+            const exportFileDefaultName = `landmapper_${Date.now()}.geojson`;
+
+            // Modern File System Access API
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: exportFileDefaultName,
+                        types: [{
+                            description: 'GeoJSON File',
+                            accept: { 'application/geo+json': ['.geojson', '.json'] }
+                        }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(dataStr);
+                    await writable.close();
+                    return;
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error('File System API Error:', err);
+                    } else {
+                        return; // User cancelled
+                    }
+                }
+            }
+
+            // Web Share API fallback
+            if (navigator.share && navigator.canShare) {
+                const file = new File([dataStr], exportFileDefaultName, { type: 'application/geo+json' });
+                if (navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: 'LandMapper Export',
+                            text: 'GeoJSON mapping data from LandMapper'
+                        });
+                        return;
+                    } catch (err) {
+                        console.error('Share failed', err);
+                    }
+                }
+            }
+
+            // Traditional fallback mapping
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        function importData() {
+            document.getElementById('fileInput').click();
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    try {
+                        const geojson = JSON.parse(event.target.result);
+                        L.geoJSON(geojson, {
+                            onEachFeature: function (feature, layer) {
+                                drawnItems.addLayer(layer);
+
+                                const layerId = L.stamp(layer);
+                                const layerInfo = {
+                                    id: layerId,
+                                    type: 'imported',
+                                    layer: layer,
+                                    name: `Imported ${layers.length + 1}`,
+                                    timestamp: new Date().toISOString()
+                                };
+                                layers.push(layerInfo);
+                            }
+                        });
+
+                        updateUI();
+                        saveOfflineData();
+                        map.fitBounds(drawnItems.getBounds());
+                        alert('Data imported successfully!');
+                    } catch (error) {
+                        alert('Error importing file. Please ensure it is valid GeoJSON.');
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        // Unit conversion settings
+        let currentAreaUnit = 'metric';
+        let currentDistUnit = 'metric';
+
+        function convertArea(squareMeters, toUnit) {
+            if (toUnit === 'imperial') {
+                // Convert to square feet
+                const sqFt = squareMeters * 10.7639;
+                if (sqFt > 43560) {
+                    // Convert to acres if large
+                    return `${(sqFt / 43560).toFixed(2)} ac`;
+                }
+                return `${sqFt.toFixed(0)} ft²`;
+            } else {
+                // Metric
+                if (squareMeters > 10000) {
+                    return `${(squareMeters / 10000).toFixed(2)} ha`;
+                }
+                return `${squareMeters.toFixed(2)} m²`;
+            }
+        }
+
+        function convertDistance(meters, toUnit) {
+            if (toUnit === 'imperial') {
+                // Convert to feet
+                const feet = meters * 3.28084;
+                if (feet > 5280) {
+                    // Convert to miles if large
+                    return `${(feet / 5280).toFixed(2)} mi`;
+                }
+                return `${feet.toFixed(0)} ft`;
+            } else {
+                // Metric
+                if (meters > 1000) {
+                    return `${(meters / 1000).toFixed(2)} km`;
+                }
+                return `${meters.toFixed(2)} m`;
+            }
+        }
+
+        function updateUnits() {
+            currentAreaUnit = document.getElementById('areaUnit').value;
+            currentDistUnit = document.getElementById('distUnit').value;
+
+            // Re-update all measurements
+            updateUI();
+
+            // If there's an active measurement, update it
+            const pill = document.getElementById('measurementPill');
+            if (!pill.classList.contains('hidden')) {
+                // Re-calculate last selected layer
+                drawnItems.eachLayer(function (layer) {
+                    if (layer._latlngs) {
+                        if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+                            calculatePolygonMeasurements(layer);
+                        } else if (layer instanceof L.Polyline) {
+                            calculateLineMeasurements(layer);
+                        } else if (layer instanceof L.Circle) {
+                            calculateCircleMeasurements(layer);
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateUI() {
+            // Update parcel count
+            const polygonCount = layers.filter(l =>
+                l.type === 'polygon' || l.type === 'rectangle').length;
+            document.getElementById('parcelCount').textContent = polygonCount;
+
+            // Calculate total area
+            let totalArea = 0;
+            let polygonLayers = 0;
+            drawnItems.eachLayer(function (layer) {
+                if (layer instanceof L.Polygon || layer instanceof L.Rectangle) {
+                    const latlngs = layer.getLatLngs()[0];
+                    const coordinates = latlngs.map(ll => [ll.lng, ll.lat]);
+                    coordinates.push(coordinates[0]);
+                    const polygon = turf.polygon([coordinates]);
+                    totalArea += turf.area(polygon);
+                    polygonLayers++;
+                }
+            });
+
+            // Calculate tea plantation specific metrics
+            const hectares = totalArea / 10000;
+            const estimatedPlants = Math.round(hectares * TEA_PLANTS_PER_HECTARE);
+
+            // Update main display with conversions
+            document.getElementById('totalAreaDisplay').textContent = convertArea(totalArea, currentAreaUnit);
+            document.getElementById('areaHa').textContent = hectares.toFixed(3);
+            document.getElementById('areaAc').textContent = (totalArea * 0.000247105).toFixed(3);
+
+            // Update tea plantation specific displays
+            document.getElementById('plantCount').textContent = estimatedPlants.toLocaleString();
+            document.getElementById('plotCount').textContent = polygonLayers;
+
+            // Update GPS status in info panel
+            if (document.getElementById('gpsAccuracy') && lastPosition) {
+                const acc = document.getElementById('accuracyDisplay').textContent;
+                document.getElementById('gpsAccuracy').textContent = `${acc}m`;
+                document.getElementById('gpsSamples').textContent = `${gpsHistory.length}/${MAX_GPS_SAMPLES}`;
+
+                // Update GPS status color based on accuracy
+                const statusEl = document.getElementById('gpsStatus');
+                const accValue = parseFloat(acc);
+                if (accValue < 5) {
+                    statusEl.textContent = 'Excellent';
+                    statusEl.className = 'font-semibold text-green-600';
+                } else if (accValue < 10) {
+                    statusEl.textContent = 'Good';
+                    statusEl.className = 'font-semibold text-blue-600';
+                } else if (accValue < 20) {
+                    statusEl.textContent = 'Fair';
+                    statusEl.className = 'font-semibold text-yellow-600';
+                } else {
+                    statusEl.textContent = 'Poor';
+                    statusEl.className = 'font-semibold text-red-600';
+                }
+            }
+
+            // Update layers list with enhanced info
+            const layersList = document.getElementById('layersList');
+            if (layers.length === 0) {
+                layersList.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-8 text-gray-400">
+                        <i class="fas fa-layer-group text-2xl mb-2"></i>
+                        <span class="text-sm">No plantation plots yet</span>
+                        <span class="text-xs mt-1">Start by drawing a polygon</span>
+                    </div>`;
+            } else {
+                layersList.innerHTML = layers.map((layer, index) => {
+                    let areaText = '';
+                    if (layer.type === 'polygon' || layer.type === 'rectangle') {
+                        // Calculate area for this specific layer if possible
+                        areaText = '<i class="fas fa-leaf text-green-500 text-xs ml-1"></i>';
+                    }
+                    return `
+                    <div class="layer-item bg-gray-50 p-3 rounded-lg mb-2 flex justify-between items-center border border-gray-100">
+                        <div>
+                            <div class="text-sm font-medium text-gray-800">
+                                Plot ${index + 1} ${areaText}
+                            </div>
+                            <div class="text-xs text-gray-500">${new Date(layer.timestamp).toLocaleTimeString()}</div>
+                            <div class="text-xs text-gray-400">GPS: ${layer.gpsAccuracy || '-'}m</div>
+                        </div>
+                        <span class="text-xs px-2 py-1 bg-white border rounded text-gray-600 font-mono">${layer.type}</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        // PWA Implementation & Service Worker
+        let deferredPrompt;
+        const installContainer = document.getElementById('pwaInstallContainer');
+        const installBtn = document.getElementById('installPwaBtn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent Chrome 67 and earlier from automatically showing the prompt
+            e.preventDefault();
+            // Stash the event so it can be triggered later.
+            deferredPrompt = e;
+            // Update UI notify the user they can add to home screen
+            if (installContainer) installContainer.classList.remove('hidden');
+        });
+
+        if (installBtn) {
+            installBtn.addEventListener('click', async () => {
+                if (!deferredPrompt) return;
+                // Show the prompt
+                deferredPrompt.prompt();
+                // Wait for the user to respond to the prompt
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`User response to the install prompt: ${outcome}`);
+                // We've used the prompt, and can't use it again, throw it away
+                deferredPrompt = null;
+                // Hide the install button
+                if (installContainer) installContainer.classList.add('hidden');
+            });
+        }
+
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('LandMapper was installed');
+            if (installContainer) installContainer.classList.add('hidden');
+        });
+
+        // Initialize map when page loads
+        document.addEventListener('DOMContentLoaded', initMap);
+
+        // Handle service worker registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(registration => {
+                        console.log('SW registered with scope:', registration.scope);
+
+                        // Check for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // New update available!
+                                    showUpdateNotification();
+                                }
+                            });
+                        });
+                    })
+                    .catch(err => {
+                        console.log('SW registration failed:', err);
+                    });
+            });
+        }
+
+        function showUpdateNotification() {
+            console.log('New update available. Refresh to apply.');
+        }
+    </script>
+</body>
+
+</html>
